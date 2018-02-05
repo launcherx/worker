@@ -25,6 +25,7 @@ import abstractions.AbstractProtocol;
 
 import java.util.ArrayList;
 import java.util.Map;
+import java.util.regex.Pattern;
 
 /*
  * Expect4j
@@ -40,7 +41,7 @@ import expect4j.ExpectUtils;
 public class GeneralTelnet extends AbstractProtocol {
 
     protected static final int COMMAND_EXECUTION_SUCCESS_OPCODE = -2;
-    protected static String ENTER_CHARACTER                     = "\r\n";
+    protected static String ENTER_CHARACTER                     = "\n";
 
     protected String telnetPromptChar;
     protected String telnetEscapedRealPrompt;
@@ -419,9 +420,17 @@ public class GeneralTelnet extends AbstractProtocol {
              * Set prompt to expect(custom or not)
              */
             String customPrompt  = jobInfo.get("cli_custom_prompt");
-            String currentPrompt = (customPrompt == null || customPrompt.length()==0)? this.telnetEscapedRealPrompt : customPrompt;
+            String currentPrompt;
+            Boolean replaceExpect = true;
+            if (customPrompt == null || customPrompt.length()==0) {
+                currentPrompt = this.telnetEscapedRealPrompt;
+            }
+            else {
+                currentPrompt = customPrompt;
+                replaceExpect = false;
+            };
 
-            DTOSendExpectPair currentPair = new DTOSendExpectPair(currentPrompt, currentCommand, currentTableField, currentTimeoutInt, currentVariable);
+            DTOSendExpectPair currentPair = new DTOSendExpectPair(currentPrompt, currentCommand, currentTableField, currentTimeoutInt, currentVariable, replaceExpect);
             this.telnetCommands.add(currentPair);
 
         }
@@ -448,7 +457,7 @@ public class GeneralTelnet extends AbstractProtocol {
         /*
          * Send enter
          */
-        DTOSendExpectPair pairForPrompt = new DTOSendExpectPair(this.telnetPromptChar, "", "", this.telnetTimeout, null);
+        DTOSendExpectPair pairForPrompt = new DTOSendExpectPair(this.telnetPromptChar, "", "", this.telnetTimeout, null, false);
         if (!this.executeCommand(pairForPrompt, false)) {
             return false;
         }
@@ -463,11 +472,10 @@ public class GeneralTelnet extends AbstractProtocol {
             return false;
         }
         else {
-
-            this.telnetEscapedRealPrompt = this.expect.getLastState().getBuffer().replace(this.currentCommand, "");
-            // replacing ANSI control chars
-            this.telnetEscapedRealPrompt = this.telnetEscapedRealPrompt.replaceAll("\u001B\\[\\?[\\d;]*[^\\d;]|\u001B\\[[\\d;]*[^\\d;]|\u001B[^\\d;]|\u001B[\\d;]|\u001B\\[[^\\d;]","");
-            this.telnetEscapedRealPrompt = this.telnetEscapedRealPrompt.replace("[", "\\[").trim();
+            this.telnetEscapedRealPrompt = this.expect.getLastState().getBuffer()
+                    .replaceAll("\u001B\\[\\?[\\d;]*[^\\d;]|\u001B\\[[\\d;]*[^\\d;]|\u001B[^\\d;]|\u001B[\\d;]|\u001B\\[[^\\d;]","")
+                    .replace("[", "\\[") // Escape for expect4j
+                    .trim();
         }
 
         if(this.telnetEscapedRealPrompt.length() == 0) {
@@ -597,11 +605,15 @@ public class GeneralTelnet extends AbstractProtocol {
 
                 if(!skipCommand) {
                     valueToSave = this.expect.getLastState().getBuffer()
-                        .replace(this.currentCommand.trim(), "")
-                        .replaceAll(currentPair.getExpect(), "")
-                        // replacing ANSI control chars
-                        .replaceAll("\u001B\\[\\?[\\d;]*[^\\d;]|\u001B\\[[\\d;]*[^\\d;]|\u001B[^\\d;]|\u001B[\\d;]|\u001B\\[[^\\d;]","")
-                        .trim();
+                            .replace(this.currentCommand.trim(), "")
+                            .trim()
+                            // replacing ANSI control chars
+                            .replaceAll("\u001B\\[\\?[\\d;]*[^\\d;]|\u001B\\[[\\d;]*[^\\d;]|\u001B[^\\d;]|\u001B[\\d;]|\u001B\\[[^\\d;]","")
+                            .trim();
+
+                    if(currentPair.getReplaceExpect()) {
+                        valueToSave = valueToSave.replaceAll(Pattern.quote(currentPair.getExpect().replace("\\[", "[")), "").trim();
+                    }
                 }
                 else {
                     valueToSave = "";
